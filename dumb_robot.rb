@@ -94,8 +94,10 @@ class SnakePlayer < Robot
   GAME_GRID_WIDTH = 64
   MAX_CHECKS = 5000
   PATTERN_SEARCH = Rectangle.new(20, 400, 100, 100)
-  ONE_SQUARE_TIME = 0.036
+  ONE_SQUARE_TIME = 0.0621
   DELAYED_WATCH_MODE = false
+  MAKE_SHORT_GOS_TIMED = false
+  TIME_GOS_UNDER_LENGTH = 4
   attr_accessor :game_x, :game_y, :x, :y, :length
 
   def initialize
@@ -193,6 +195,49 @@ class SnakePlayer < Robot
     end
   end
 
+  def squares_sleep_time(squares)
+    squares = squares - 0.25
+    if squares > 0
+      return squares * ONE_SQUARE_TIME
+    else
+      return 0
+    end
+  end
+
+
+  def timed_go(dir, square_length=1, turn=true)
+    if turn
+      self.change_direction(dir)      
+    else
+      @direction = dir
+    end
+    puts "Going #{@direction} for #{square_length} and #{turn} turning. Timed."
+    
+    # Figure out where to expect the snake
+    dest_x = @x
+    dest_y = @y
+    # puts "Calcing #{watch_x},#{watch_y}, will end up at #{real_x(dest_x)}, #{real_y(dest_y)}"
+    
+    length = square_length * SQUARE_LENGTH
+
+    case dir
+    when :up
+      dest_y -= length
+    when :down
+      dest_y += length
+    when :right
+      dest_x += length 
+    when :left
+      dest_x -= length
+    end
+
+    sleep squares_sleep_time(square_length)
+    @x = x
+    @y = y
+    return true
+  end
+
+
   def go(dir, square_length=1, turn=true)
     if turn
       self.change_direction(dir)      
@@ -231,9 +276,10 @@ class SnakePlayer < Robot
       watch_x -= watch_length
       dest_x -= length
     end
-    
+    # t = Time.now 
     if watch_coord_for_color(real_x(watch_x), real_y(watch_y), SNAKE_COLOR_HSB) 
-      sleep ONE_SQUARE_TIME if behind
+      # sleep ONE_SQUARE_TIME if behind
+      # puts "Took #{t} secs to travel #{square_length} squares, at #{t/square_length} secs/square"
       @x = dest_x
       @y = dest_y
       return true
@@ -256,16 +302,16 @@ class SnakePlayer < Robot
           old_color = color
         end
       end
-      # Delay this error checking logic for just a little bit to make sure we don't make the check too slow to catch
-      # 1 block length gos, this doesnt actually work fast enough though
-      if i == 3
-        unless @game_rectangle.contains(watch_x, watch_y)
-          throw "Watch point #{watch_x}, #{watch_y} out of bounds!"
-        else
-          # puts "Watching point #{watch_x}, #{watch_y}"
-        end
-        self.mouse_move(watch_x, watch_y)     
-      end
+      # # Delay this error checking logic for just a little bit to make sure we don't make the check too slow to catch
+      # # 1 block length gos, this doesnt actually work fast enough though
+      # if i == 5
+      #   unless @game_rectangle.contains(watch_x, watch_y)
+      #     throw "Watch point #{watch_x}, #{watch_y} out of bounds!"
+      #   else
+      #     # puts "Watching point #{watch_x}, #{watch_y}"
+      #   end
+      #   self.mouse_move(watch_x, watch_y)     
+      # end
 
       if (i += 1) > MAX_CHECKS
         throw "Snake never appeared at #{watch_x}, #{watch_y}"
@@ -317,14 +363,12 @@ class SnakePlayer < Robot
   end
 
   def articulate_counter_clockwise(sleep_time)
-   sleep_time ||= ONE_SQUARE_TIME
    self.change_direction(@direction.next_counter_clockwise)
    sleep sleep_time
    self.change_direction(@direction.next_counter_clockwise)
   end
 
-  def articulate_clockwise(sleep_time=nil)
-   sleep_time ||= ONE_SQUARE_TIME
+  def articulate_clockwise(sleep_time)
    self.change_direction(@direction.next_clockwise)
    sleep sleep_time
    self.change_direction(@direction.next_clockwise)     
@@ -332,7 +376,7 @@ class SnakePlayer < Robot
   
   def articulate_down(sleep_squares=nil)
     sleep_squares ||= 1
-    sleep_time = sleep_squares * ONE_SQUARE_TIME
+    sleep_time = squares_sleep_time(sleep_squares)
     case @direction
     when :left then articulate_counter_clockwise(sleep_time)
     when :right then articulate_clockwise(sleep_time)
@@ -340,6 +384,19 @@ class SnakePlayer < Robot
     when :down then throw "Cant articulate down when going down"
     end
     @y += SQUARE_LENGTH * sleep_squares
+    return true
+  end
+
+  def articulate_up(sleep_squares=nil)
+    sleep_squares ||= 1
+    sleep_time = squares_sleep_time(sleep_squares)
+    case @direction
+    when :left then articulate_clockwise(sleep_time)
+    when :right then articulate_counter_clockwise(sleep_time)
+    when :down then articulate_clockwise(sleep_time)
+    when :up then throw "Cant articulate up when going up"
+    end
+    @y -= SQUARE_LENGTH * sleep_squares
     return true
   end
 
@@ -500,8 +557,13 @@ class SnakePlayer < Robot
       # Snake needs to articulate food_y times with a big enough x to get to the food
       # with everything above it on the map. Figure out how many blocks will be needed
       # in each row to get there
-      if food_y > 2
-        row_width = (@length / food_y).ceil
+      adjusted_length = @length - 65
+      if adjusted_length < 0
+        # The whole snake fits in the return journey, no need to make a column.
+        adjusted_length = 0
+        row_width = 0
+      elsif food_y > 2
+        row_width = (adjusted_length / food_y).ceil # Estimate how wide we'll have to be to get the food. This gets changed later.
       else
         row_width = GAME_GRID_WIDTH # Do big rows to get the snake out of the way asap
       end
@@ -514,7 +576,7 @@ class SnakePlayer < Robot
         # The rows are too big, so either the snake is too long or the food is too high up.
         # Figure out how fast we can turn around doing full row traverses
         row_width = (GAME_GRID_WIDTH - 2)
-        rows = (@length / row_width).ceil
+        rows = (adjusted_length / row_width).ceil
         puts "Rows won't fit. Food is down #{food_y} rows, but we go down #{rows} so we fit before turning around."
       end
     
@@ -535,7 +597,7 @@ class SnakePlayer < Robot
           q.push [:left, row_offset - 1, false]
         end
         # Go right down and get the food.
-        q.push [:down, food_y-1, true]
+        q.push [:down, food_y-1, true] if food_y > 2
         q.push [:left, GAME_GRID_WIDTH-row_offset, true]
         up = food_y
       else 
@@ -556,7 +618,11 @@ class SnakePlayer < Robot
 
       # We've now eaten the block. Lets go back to the base state and do it again.
       # We went down one row at the top, and then (rows/2).ceil*2 times after that. Go back up that
-      q.push [:up, up, true]
+      if up > 1
+        q.push [:up, up, true]
+      else
+        q.push [:articulate_up]
+      end
       q.push [:right, 0, true]
       q.push [:got_block]
       q.push [:right, GAME_GRID_WIDTH-1, true]        
@@ -567,17 +633,33 @@ class SnakePlayer < Robot
     self.start_game!      
     sleep 0.1 # Allow new food position to make itself seen
     dispatcher.call
+    next_action = false
+
     until q.empty?
-      action = q.pop
+      if next_action
+        action = next_action
+        next_action = q.pop
+      else
+        action = q.pop
+        next_action = q.pop
+      end
       case action[0]
       when :articulate_down
         self.articulate_down
-      when :articulate_down_with_space
-        self.articulate_down_with_space
+      when :articulate_up
+        self.articulate_up
       when :got_block
         dispatcher.call
       else
-        self.go(action[0], action[1], action[2])
+        # Try and switch to a timed sequence if the length between turns is too short
+        if(action[1] < TIME_GOS_UNDER_LENGTH && next_action.length == 3 && MAKE_SHORT_GOS_TIMED)
+          puts "Applying timed optimization"
+          self.timed_go(action[0], action[1], action[2])
+          self.go(next_action[0], next_action[1], next_action[2])
+          next_action = false
+        else
+          self.go(action[0], action[1], action[2])
+        end          
       end
     end
     throw "Queue empty, game over."
