@@ -1,3 +1,4 @@
+require 'thread'
 include Java
 import java.awt.Robot
 import java.awt.Color
@@ -9,7 +10,6 @@ import java.awt.Graphics2D
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 
-require 'thread'
 Thread.abort_on_exception = true
 
 class Fixnum
@@ -37,7 +37,6 @@ class Color
   def hsb_array
     comp_array = Java::float[3].new
     self.class.RGBtoHSB(self.red, self.green, self.blue, comp_array)
-    comp_array
   end
 
   def compare_hsb_array(tolerance, comp_array)
@@ -47,7 +46,7 @@ class Color
     3.times do |i|
       diff += (comp_array[i] - own_hsb[i]).abs
     end
-    diff <= tolerance
+    return (diff <= tolerance)
   end
 end
 
@@ -71,8 +70,8 @@ class Symbol
   def next_counter_clockwise
     DIRECTION_LIST[(DIRECTION_LIST.index(self)-1)%4]
   end
-
 end
+
 class SnakePlayer < Robot
   BLACK = Color.new(0,0,0)
   WHITE = Color.new(255, 255, 255) 
@@ -108,9 +107,14 @@ class SnakePlayer < Robot
     screen_size = Toolkit.get_default_toolkit.get_screen_size
     image = self.create_screen_capture Rectangle.new(screen_size.width, screen_size.height)
 
+    Thread.new do
+      self.mouseMove(PATTERN_SEARCH.x, PATTERN_SEARCH.y)
+      sleep 1
+      self.mouseMove(PATTERN_SEARCH.x+PATTERN_SEARCH.width, PATTERN_SEARCH.y+PATTERN_SEARCH.height)
+    end
+
     (PATTERN_SEARCH.y..PATTERN_SEARCH.y+PATTERN_SEARCH.height).each do |y|
       (PATTERN_SEARCH.x..PATTERN_SEARCH.x+PATTERN_SEARCH.width).each do |x|
-        self.mouseMove(x, y)
         if image.pattern_at?(pattern, x, y)
           return [x,y]
         end
@@ -121,9 +125,12 @@ class SnakePlayer < Robot
  
   def find_food_on_grid
     image = self.create_screen_capture @game_rectangle
+    puts image
     (0..(@game_rectangle.height/SQUARE_LENGTH).floor).each do |y|
       (0..(@game_rectangle.width/SQUARE_LENGTH).floor).each do |x|
         color = Color.new(image.getRGB(x*SQUARE_LENGTH, y*SQUARE_LENGTH))
+        puts color
+        puts color.compare_hsb_array(0.125, FOOD_COLOR_HSB)
         if color.compare_hsb_array(0.125, FOOD_COLOR_HSB)
           return x, y
         end
@@ -194,7 +201,7 @@ class SnakePlayer < Robot
     else
       @direction = dir
     end
-    # puts "Going #{@direction}"
+    puts "Going #{@direction}"
 
     # Figure out where to expect the snake
     watch_x = @x
@@ -243,11 +250,11 @@ class SnakePlayer < Robot
     loop do
       color = self.getPixelColor(watch_x, watch_y)
       if color.compare_hsb_array(0.125, hsb_array)
-        # puts "Found #{color} at watch point #{watch_x}, #{watch_y} after #{i} checks."
+        puts "Found #{color} at watch point #{watch_x}, #{watch_y} after #{i} checks."
         return true
       else
         if color != old_color
-          # puts "Color at watch point changed to #{color}"
+          puts "Color at watch point changed to #{color}"
           old_color = color
         end
       end
@@ -350,7 +357,7 @@ class SnakePlayer < Robot
   def click!(x,y)
     self.mouse_move(x,y)
     self.mouse_press(InputEvent::BUTTON1_MASK)
-    sleep 0.1
+    sleep 0.2
     self.mouse_release(InputEvent::BUTTON1_MASK)
   end
 
@@ -423,11 +430,17 @@ class SnakePlayer < Robot
       return false
     end
   end
-    
+  
+  def prepare_for_game!
+    unless self.prepare_for_game
+      throw "Couldn't find a the game space!"
+    end
+    return true
+  end
+
   def highlight_game
     click!(@game_rectangle.get_center_x, @game_rectangle.get_center_y)
     sleep 0.25
-    puts "Game highlighted"
   end
   
   def start_game!
@@ -435,42 +448,23 @@ class SnakePlayer < Robot
     sleep 0.1 # Wait for old game to clear for sure
   end 
 
-  def play_slithery
-    if self.prepare_for_game
-      puts "Game found at #{game_x}, #{game_y}"
-      start_game!
-      # Going up, get to top
-      go(:up, 31)
-      fast_go(:right, 32)
-      15.times do
-        go(:down) #articulate_down
-        go(:left, 63)
-        go(:down) #articulate_down
-        go(:right, 63)
-      end
-    else
-      puts "Couldn't find game space!"
-    end
-  end
-
   def play_dumb
-    if self.prepare_for_game
-      self.start_game!
-      go(:up, 31)
-      go(:right, 32)
-      loop do
-        15.times do
-          articulate_down
-          go(:left, 62, false)
-          articulate_down
-          go(:right, 62, false)
-        end
+    self.prepare_for_game!
+    self.start_game!
+    go(:up, 31)
+    go(:right, 32)
+    loop do
+      15.times do
         articulate_down
-        go(:left, 63, false)
-        go(:up, 31)
-        go(:right, 63)
-
+        go(:left, 62, false)
+        articulate_down
+        go(:right, 62, false)
       end
+      articulate_down
+      go(:left, 63, false)
+      go(:up, 31)
+      go(:right, 63)
+
     end
   end
 
@@ -487,104 +481,118 @@ class SnakePlayer < Robot
 
   def play_in_columns
     # Program to find food
-    if self.prepare_for_game
-      q = Queue.new
-      blocks = Queue.new
-      q.push [:up, 31, true]
-      q.push [:right, 32, true]
-      self.start_game!      
-      sleep 0.1 # Allow new food position to make itself seen      
-      dispatcher = Thread.new do
-        loop do
-          if blocks.length == 0
-            puts "Block consumed"
-            @length += FOOD_ADDS_SQUARES 
-            food_x,food_y = self.find_food_on_grid
+    self.prepare_for_game!
+    puts "Game prepared."
+    q = Queue.new
+    blocks = Queue.new
+    q.push [:up, 31, true]
+    q.push [:right, 32, true]
+    self.start_game!      
+    sleep 0.1 # Allow new food position to make itself seen
+    # Thread.current.abort_on_exception = true  
+    dispatcher = Thread.new do
+      loop do
+        unless blocks.length == 0
+          Thread.stop          
+        else
+          puts "Scheduling next passage."
+          Thread.current.abort_on_exception = true
+          @length += FOOD_ADDS_SQUARES 
+          food_x,food_y = self.find_food_on_grid
+          if food_x == false
+            puts "Couldn't find food!"
+            throw "Couldn't find food on the grid!"
+          else
             puts "Food found at #{food_x},#{food_y}"
             self.mouseMove(real_x(food_x*SQUARE_LENGTH),real_y(food_y*SQUARE_LENGTH))
-            # Add new actions to get to block from home state
-
-            # Snake needs to articulate food_y times with a big enough x to get to the food
-            # with everything above it on the map. Figure out how many blocks will be needed
-            # in each row to get there
-            if food_y != 0
-              row_width = (@length / food_y).ceil
-            else
-              row_width = GAME_GRID_WIDTH # Do big rows to get the snake out of the way asap
-            end
-
-            # If the rows will fit, do them, then go back to the top.
-            if row_width < (GAME_GRID_WIDTH - 2)
-              puts "Rows will fit. Food is at position #{food_y}, so we go down #{food_y}"
-              rows = food_y
-            else
-              # The rows are too big, so either the snake is too long or the food is too high up.
-              # Figure out how fast we can turn around doing full row traverses
-              row_width = (GAME_GRID_WIDTH - 2)
-              rows = (@length / row_width).ceil
-            end
-            
-            # Move the column over if the food isn't in range. row_offfset is the squares
-            # from the right the column needs to be.
-            if (row_width < (GAME_GRID_WIDTH - food_x))
-              row_offset = (GAME_GRID_WIDTH - food_x) - row_width
-            else
-              row_offset = 0
-            end
-
-            puts "Going down #{rows} at #{row_width} row width, #{row_offset} row offset."
-            q.push [:articulate_down]
-
-            q.push [:left, row_offset, false] if row_offset > 0
-           
-            ((rows/2).ceil).times do
-              q.push [:left, row_width, false]
-              q.push [:articulate_down]
-              q.push [:right, row_width, false]
-              q.push [:articulate_down]               
-            end
- 
-            # # Heading right
-            # q.push [:right, row_width, false]
-            # if rows % 2 == 0
-            #   # Even number of rows, so we should just need to get the food.
-            #   puts "Even descension."
-            #   q.push [:articulate_down]    
-            # else
-            #   # Odd number of rows, so we need to go down once to be at the food row.
-            #   puts "Odd descending, lets hope this go down works."
-            #   q.push [:articulate_down_with_space]    
-            # end
-            # q.push [:left, row_width, false] 
-
-            # Add actions to return to home state.
-            q.push [:left, GAME_GRID_WIDTH-1-row_offset, false]
-            # We've now eaten the block. Lets go back to the base state and do it again.
-            blocks.push true
-            q.push [:got_block]
-  
-            # We went down one row at the top, and then (rows/2).ceil*2 times after that. Go back up that
-            up = 1 + (rows/2).ceil*2
-            q.push [:up, up, true]
-            q.push [:right, GAME_GRID_WIDTH-1, true]
-          else
-            Thread.stop
           end
+          # Add new actions to get to block from home state
+
+          # Snake needs to articulate food_y times with a big enough x to get to the food
+          # with everything above it on the map. Figure out how many blocks will be needed
+          # in each row to get there
+          if food_y != 0
+            row_width = (@length / food_y).ceil
+          else
+            row_width = GAME_GRID_WIDTH # Do big rows to get the snake out of the way asap
+          end
+
+          # If the rows will fit, do them, then go back to the top.
+          if row_width < (GAME_GRID_WIDTH - 2)
+            puts "Rows will fit. Food is at position #{food_y}, so we go down #{food_y}"
+            rows = food_y
+          else
+            # The rows are too big, so either the snake is too long or the food is too high up.
+            # Figure out how fast we can turn around doing full row traverses
+            row_width = (GAME_GRID_WIDTH - 2)
+            rows = (@length / row_width).ceil
+          end
+          
+          # Move the column over if the food isn't in range. row_offfset is the squares
+          # from the right the column needs to be.
+          if (row_width < (GAME_GRID_WIDTH - food_x))
+            row_offset = (GAME_GRID_WIDTH - food_x) - row_width
+          else
+            row_offset = 0
+          end
+
+          puts "Going down #{rows} at #{row_width} row width, #{row_offset} row offset."
+          q.push [:articulate_down]
+
+          q.push [:left, row_offset, false] if row_offset > 0
+         
+          ((rows/2).ceil).times do
+            q.push [:left, row_width, false]
+            q.push [:articulate_down]
+            q.push [:right, row_width, false]
+            q.push [:articulate_down]               
+          end
+
+          # # Heading right
+          # q.push [:right, row_width, false]
+          # if rows % 2 == 0
+          #   # Even number of rows, so we should just need to get the food.
+          #   puts "Even descension."
+          #   q.push [:articulate_down]    
+          # else
+          #   # Odd number of rows, so we need to go down once to be at the food row.
+          #   puts "Odd descending, lets hope this go down works."
+          #   q.push [:articulate_down_with_space]    
+          # end
+          # q.push [:left, row_width, false] 
+
+          # Add actions to return to home state.
+          q.push [:left, GAME_GRID_WIDTH-1-row_offset, false]
+          # We've now eaten the block. Lets go back to the base state and do it again.
+          blocks.push true
+          q.push [:got_block]
+
+          # We went down one row at the top, and then (rows/2).ceil*2 times after that. Go back up that
+          up = 1 + (rows/2).ceil*2
+          q.push [:up, up, true]
+          q.push [:right, GAME_GRID_WIDTH-1, true]
         end
       end
-
+      puts "Main thread is continuing here."
+      # Thread.main.priority = 9
 
       until q.empty?
         action = q.pop
-        # puts "Executing #{action.join(" ")}"
         case action[0]
-        when :articulate_down then self.articulate_down
-        when :articulate_down_with_space then self.articulate_down_with_space
-        when :got_block then blocks.pop; dispatcher.run
+        when :articulate_down
+          self.articulate_down
+        when :articulate_down_with_space
+          self.articulate_down_with_space
+        when :got_block
+          puts "Popping off a block and scheduling dispatcher"
+          blocks.pop
+          dispatcher.wakeup
         else
+          puts "Going " + action.join(" ")
           self.go(action[0], action[1], action[2])
         end
-      end 
+      end
+      throw "Queue empty, game over."
     end
   end
 end
