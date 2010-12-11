@@ -1,10 +1,17 @@
 require './dumb_robot'
 
-player = SnakePlayer.new
-player.prepare_for_game
-player.start_game!
-player.go(:up, 20)
-player.go(:left, 10)
-5.times do 
-  player.articulate_down_with_space
+t = Thread.new do
+  puts "Here"
+
+  100000.times do |i|
+    if i % 10000 == 0
+      puts i
+      Thread.pass
+    end
+  end
+  Thread.main.run
 end
+
+Thread.stop
+
+puts "Below"
