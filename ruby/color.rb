@@ -1,8 +1,8 @@
 class BufferedImage
   def pattern_at?(pattern,x,y)
     pattern.each_with_index do |row, dx|
-      row.each_with_index do |point, dy|
-        return false unless self.getRGB(x+dx, y+dy) == point
+      row.each_with_index do |color, dy|
+        return false unless color.compare_hsb_array(0.125, Color.new(self.getRGB(x+dx, y+dy)).hsb_array)
       end
     end
     return true

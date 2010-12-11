@@ -63,19 +63,19 @@ module Snake
 
       for i in 0..max_checks 
         found_color = self.get_pixel_color(x, y)
-        if found_color.compare_hsb_array(0.125, hsb)
-          puts "Found #{color} at watch point #{x}, #{y} after #{i} checks."
+        if found_color.compare_hsb_array(0.2, hsb)
+          puts "Found #{found_color} at watch point #{x}, #{y} after #{i} checks."
           return true
         else
-          if color != old_color
-            puts "Color at watch point changed to #{color} after #{i} checks."
-            old_color = color
+          if found_color != old_color
+            puts "Color at watch point changed to #{found_color} after #{i} checks."
+            old_color = found_color
           end
         end
 
         if i % 5 == 0
           images << self.create_screen_capture(Snake::Game.game_rectangle)
-          colors << color
+          colors << found_color
         end
 
         # Delay this error checking logic for just a little bit to make sure we don't make the check too slow to catch

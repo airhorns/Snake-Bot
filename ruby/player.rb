@@ -78,7 +78,7 @@ module Snake
 
     def articulate_up(sleep_squares=nil)
       sleep_squares ||= 1
-      sleep_time = squares_sleep_time(sleep_squares)
+      sleep_time = Snake::squares_sleep_time(sleep_squares)
       case @direction
       when :left then articulate_clockwise(sleep_time)
       when :right then articulate_counter_clockwise(sleep_time)

@@ -6,13 +6,13 @@ module Snake
       [PAGE_BACKGROUND_COLOR, PAGE_BACKGROUND_COLOR, PAGE_BACKGROUND_COLOR],
       [PAGE_BACKGROUND_COLOR, GAME_BORDER_COLOR, GAME_BORDER_COLOR],
       [PAGE_BACKGROUND_COLOR, GAME_BORDER_COLOR, GAME_BACKGROUND_COLOR]
-    ].map {|row| row.map {|point| point.getRGB }}
+    ]
 
     PLAY_AGAIN_PATTERN = [
       [WHITE, WHITE, WHITE],
       [WHITE, BLACK, BLACK],
       [WHITE, BLACK, BLACK]
-    ].map {|row| row.map {|point| point.getRGB }}
+    ]
 
     def mask_for_direction(dir)
       case dir
@@ -75,7 +75,6 @@ module Snake
       unless game_point
         game_point = self.find_pattern(PLAY_AGAIN_PATTERN, PATTERN_SEARCH)
         if game_point
-          # Play again triggering
           play_again = true
         else
           return false
@@ -83,6 +82,7 @@ module Snake
       end
 
       if game_point
+        puts "Found game at #{game_point}"
         Snake::Game.game_rectangle = Rectangle.new(game_point, Dimension.new(GAME_WIDTH, GAME_HEIGHT))
         self.highlight_game
         if play_again
