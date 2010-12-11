@@ -27,10 +27,10 @@ module Snake
     # Finds the food on the grid
     def find_food_on_grid
       image = self.create_screen_capture Snake::Game.game_rectangle
-      (0..(Snake::Game.game_rectangle.height/SQUARE_LENGTH).floor).each do |y|
-        (0..(Snake::Game.game_rectangle.width/SQUARE_LENGTH).floor).each do |x|
+      for y in 0..(Snake::Game.game_rectangle.height/SQUARE_LENGTH).floor
+        for x in 0..(Snake::Game.game_rectangle.width/SQUARE_LENGTH).floor
           if Color.new(image.getRGB(x*SQUARE_LENGTH, y*SQUARE_LENGTH)).compare_hsb_array(0.125, FOOD_COLOR_HSB)
-            return GamePoint.new(x, y)
+            return GridPoint.new(x, y)
           end
         end
       end
