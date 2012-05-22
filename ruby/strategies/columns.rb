@@ -64,9 +64,9 @@ module Snake
             up = 1
           else
             # Go right down and get the food.
-            q.push [:down, food_y, true]
+            q.push [:down, food_y-1, true]
             turned_left = false
-            up = food_y
+            up = food_y-1
           end
           q.push [:left, GAME_GRID_WIDTH-1, !turned_left]
         else 
